@@ -888,15 +888,21 @@ class Route53Provider(_AuthMixin, BaseProvider):
                 return f'{cn}-{cc}'
 
     def _data_for_geo(self, rrset):
-        ret = {
-            'type': rrset['Type'],
-            'values': [v['Value'] for v in rrset['ResourceRecords']],
-            'ttl': int(rrset['TTL']),
-        }
-        geo = self._parse_geo(rrset)
-        if geo:
-            ret['geo'] = geo
-        return ret
+        if not 'TrafficPolicyInstanceId' in rrset:
+            ret = {
+                'type': rrset['Type'],
+                'values': [v['Value'] for v in rrset['ResourceRecords']],
+                'ttl': int(rrset['TTL']),
+            }
+            geo = self._parse_geo(rrset)
+            if geo:
+                ret['geo'] = geo
+            return ret
+        else:
+            return {
+                'type': "TrafficPolicy",
+                'record': rrset['Name'],
+            }
 
     _data_for_A = _data_for_geo
     _data_for_AAAA = _data_for_geo
@@ -1218,7 +1224,10 @@ class Route53Provider(_AuthMixin, BaseProvider):
                     continue
                 # A basic record (potentially including geo)
                 data = getattr(self, f'_data_for_{record_type}')(rrset)
-                records[record_name][record_type].append(data)
+                if data['type'] != "TrafficPolicy":
+                    records[record_name][record_type].append(data)
+                else:
+                    self.log.info("TrafficPolicies are not supported, skipping " + data['record'])
 
             # Convert the dynamic rrsets to Records
             for name, types in dynamic.items():
